@@ -8,8 +8,11 @@ var util = require('util');
 var passport = require('passport');
 var GitHubStrategy = require('passport-github2').Strategy;
 var ecc = require('eccjs');
-var pubnub = require('pubnub');
+var PubNub = require('pubnub');
+var https = require('https');
+var fs = require('fs');
 
+var xirsys = require('./xirsys.js');
 var storage = require('node-persist');
 storage.initSync();
 
@@ -53,36 +56,42 @@ passport.serializeUser(function(user, done) {
 
     var dbChannel = 'user_' + user.id;
 
-    var db = pubnub.init({
-      subscribe_key: 'sub-c-981faf3a-2421-11e5-8326-0619f8945a4f',
-      publish_key: 'pub-c-351c975f-ab81-4294-b630-0aa7ec290c58',
-      secret_key: config.pubnub.secret_key,
-      auth_key: config.pubnub.auth_key,
+    var db = new PubNub({
+      subscribeKey: 'sub-c-981faf3a-2421-11e5-8326-0619f8945a4f',
+      publishKey: 'pub-c-351c975f-ab81-4294-b630-0aa7ec290c58',
+      secretKey: config.pubnub.secret_key,
+      authKey: config.pubnub.auth_key,
     });
-
-    db.grant({ 
-      channel: dbChannel, 
-      auth_key: config.pubnub.auth_key, 
-      read: true, 
-      write: true, 
+    db.grant({
+      channels: [dbChannel],
+      authKeys: [config.pubnub.auth_key],
+      read: true,
+      write: true,
       callback: function(m){console.log(m);} ,
       error: function(err){console.log(err);}
     });
 
     db.subscribe({
-      channel: dbChannel,
-      callback: function(m) {console.log(m)},
-      connect: function() {
-        db.history({
-          channel: dbChannel,
-          callback: function(m) {
-       
-            if(m[0].length > 0) {
+      channels: [dbChannel]
+    });
+    db.addListener({
+      status: function(statusEvent) {
+        console.log(statusEvent);
+        if (statusEvent.category === "PNConnectedCategory") {
+
+          db.history({
+            channel: dbChannel
+          },function(status, m) {
+
+            console.log('======== ', m.messages.length);
+            console.log(m);
+
+            if(m.messages.length > 0) {
               console.log('========');
               console.log('User data found in history. No new key is generated.');
 
-              user.eccKey = m[0][0].eccKey;
-              user.publicKey = m[0][0].publicKey;
+              user.eccKey = m.messages[0].eccKey;
+              user.publicKey = m.messages[0].publicKey;
               storage.setItem('user_' + user.id, user);
               done(null, user.id);
 
@@ -97,22 +106,25 @@ passport.serializeUser(function(user, done) {
               storage.setItem('user_' + user.id, user);
 
               db.publish({
-                channel: dbChannel,
+                channels: [dbChannel],
                 message: user,
-                callback: function() {
-                  done(null, user.id);
-                }
+              }, function() {
+                done(null, user.id);
               });
             }
 
 
-          }
-        });
+          });
+        }
+      },
+      message: function(message) {
+        // handle message
+      },
+      presence: function(presenceEvent) {
+        // handle presence
       }
     });
   }
-
-  
 });
 
 passport.deserializeUser(function(id, done) {
@@ -135,34 +147,35 @@ passport.use(new GitHubStrategy({
 var channel = 'am-ecc-chat';
 var channelPres = channel + '-pnpres';
 
-pubnub = pubnub.init({
-  subscribe_key: 'sub-c-981faf3a-2421-11e5-8326-0619f8945a4f',
-  publish_key: 'pub-c-351c975f-ab81-4294-b630-0aa7ec290c58',
-  secret_key: config.pubnub.secret_key,
-  auth_key: config.pubnub.auth_key,
+var pubnub = new PubNub({
+  subscribeKey: 'sub-c-981faf3a-2421-11e5-8326-0619f8945a4f',
+  publishKey: 'pub-c-351c975f-ab81-4294-b630-0aa7ec290c58',
+  secretKey: config.pubnub.secret_key,
+  authKey: config.pubnub.auth_key,
   ssl: true
 });
 
-pubnub.grant({ 
-  channel: channel + ',' + channelPres, 
-  auth_key: config.pubnub.auth_key, 
-  read: true, 
-  write: true, 
+pubnub.grant({
+  channels: [channel + ',' + channelPres],
+  authKeys: [config.pubnub.auth_key],
+  read: true,
+  write: true,
   callback: function(m){console.log(m);} ,
   error: function(err){console.log(err);}
 });
 
-//Routes 
+//Routes
 
 app.get('/', function (req, res) {
+
   res.render('index', { user: req.user });
 
   if(req.user) {
-    pubnub.grant({ 
-      channel: channel + ',' + channelPres, 
-      auth_key: req.user.accessToken, 
-      read: true, 
-      write: true, 
+    pubnub.grant({
+      channels: [channel + ',' + channelPres],
+      authKeys: [req.user.accessToken],
+      read: true,
+      write: true,
       callback: function(m){console.log(m);} ,
       error: function(err){console.log(err);}
     });
@@ -194,24 +207,31 @@ app.get('/user/:id', function (req, res) {
   } else {
     res.send({'status': 403});
   }
-  
+
 });
 
-app.get('/login', 
+app.get('/login',
   passport.authenticate('github', { scope: ['user']}),
   function(req, res) {
 });
-
 app.get('/logout', function(req, res) {
   req.logout();
   res.redirect('/');
 });
-
-app.get('/callback', passport.authenticate('github', { failureRedirect: '/login' }),
+//Apply xirsys.turn middleware to retrieve the RTCIceServer dictionary
+app.get('/callback', passport.authenticate('github', { failureRedirect: '/login' }), xirsys.turn,
   function(req, res) {
     res.redirect('/');
 });
+//Create HTTPS server
+var httpsOptions = {
+  key: fs.readFileSync('./app/cert/server.key')
+  , cert: fs.readFileSync('./app/cert/server.crt')
+};
 
-var server = app.listen(process.env.PORT || 3000, function(){
-  console.log('Express server listening on port %d in %s mode', this.address().port, app.settings.env);
+https.createServer(httpsOptions, app).listen(3000, function (err) {
+  if (err) {
+    throw err
+  }
+  console.log('Secure server is listening on '+3000+'...');
 });

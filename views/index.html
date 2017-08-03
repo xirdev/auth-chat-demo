@@ -10,6 +10,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<link href='//fonts.googleapis.com/css?family=Raleway' rel='stylesheet' type='text/css'>
 	<link rel="stylesheet" href="css/style.css">
+	<script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
 </head>
 
 <body>
@@ -30,6 +31,13 @@
 		<h1>PubNub Access Manager Chat Demo</h1>
 	</header>
 
+	<section class="row">
+		<div id="vid-view" style="text-align: center;">
+			<video id="local-video" style="width:48%;" class="major-box" autoplay="autoplay" muted="true"></video>
+			<video id="remote-video" style="width:48%;" class="major-box" autoplay="autoplay"></video>
+		</div>
+	</section>
+
 	<section id="main" role="main">
 		<p class="me"><img src="<%= user._json.avatar_url %>" class="avatar" align="left"><%= user.displayName %> (<%= user.username %>)</p>
 	<% } %>
@@ -48,12 +56,12 @@
 	</footer>
 
 
-	<script src="//cdn.pubnub.com/pubnub-3.7.12.min.js"></script>
+	<script src="//cdn.pubnub.com/sdk/javascript/pubnub.4.13.0.min.js"></script>
 	<script src="js/ecc-0.3.min.js"></script>
 
 	<script>
 	<% if (user) { %>
-		window.user = {id:"<%= user.id %>", username: "<%= user.username %>", avatar: "<%= user._json.avatar_url %>", accessToken: "<%= user.accessToken %>", eccKey: "<%= user.eccKey %>"};
+		window.user = {id:"<%= user.id %>", username: "<%= user.username %>", avatar: "<%= user._json.avatar_url %>", accessToken: "<%= user.accessToken %>", eccKey: "<%= user.eccKey %>", xirsys: '<%- user.xirsys %>'};
 	<% } %>
 	</script>
 

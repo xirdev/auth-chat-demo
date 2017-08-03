@@ -18,7 +18,7 @@
     "node-persist": "0.0.6",
     "passport": "^0.2.2",
     "passport-github2": "^0.1.9",
-    "pubnub": "^3.7.12",
+    "pubnub": "^4.13.0",
     "urlencode": "^1.0.1"
   }
 }
